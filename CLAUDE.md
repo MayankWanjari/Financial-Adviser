@@ -85,16 +85,20 @@ financial-advisor-ai/
 - 2026-05-05: Stage 1 Python files created — rss_fetcher.py, ai_analyzer.py, briefing_saver.py, main.py, watchlist.txt
 - 2026-05-05: Stage 1 config + docs created — .env.example, .gitignore, requirements.txt, README.md, PHILOSOPHY.md, JOURNAL.md
 - 2026-05-05: Stage 1 fully complete. git repo initialized with initial commit.
+- 2026-05-05: Bug fixes — replaced 4 dead/stale feeds (Moneycontrol x2, Business Standard, Reuters) with Hindu BusinessLine + CNBC TV18 + NDTV Profit; fixed source count display; fixed Rich markup eating [SourceName]; removed [:75] headline truncation in dry-run; added feed health summary to every run; added Windows UTF-8 encoding fix in main.py
 
 ## Key design decisions (helpful for Stage 2 planning)
 
 - Deduplication threshold: 0.75 (constant DEDUP_SIMILARITY_THRESHOLD in rss_fetcher.py)
 - AI model: gemini-2.0-flash (constant MODEL_NAME in ai_analyzer.py)
 - Article data shape: {title, summary, link, published (datetime), sources (list[str]), watchlist_hits (list[str])}
+- fetch_headlines() returns 3-tuple: (articles, symbols, feed_results) — feed_results has per-feed health data
 - Briefing saved with YAML frontmatter header (date, mode, watchlist, count)
 - ELI12 mode: CLI flag --eli12, appends ELI12_ADDON to system instruction
 - Dry run mode: CLI flag --dry-run, skips AI call entirely
 - Windows-primary setup; Mac/Linux alternatives noted in README
+- Active feeds (as of 2026-05): Economic Times, Livemint, Hindu BusinessLine, CNBC TV18, NDTV Profit
+- Dead feeds removed: Moneycontrol (stale since Apr 2024), Business Standard (broken XML), Reuters (URL dead since ~2020)
 
 ## Open questions / TODO
 

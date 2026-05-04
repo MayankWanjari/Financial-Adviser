@@ -2,7 +2,7 @@
 rss_fetcher.py — Fetch, filter, deduplicate, and tag RSS headlines.
 
 This is the "data collection" layer of Stage 1. It:
-  1. Pulls news from 6 Indian financial RSS feeds in parallel (faster than one-by-one)
+  1. Pulls news from 5 Indian financial RSS feeds in parallel (faster than one-by-one)
   2. Keeps only articles published in the last 24 hours
   3. Merges near-duplicate headlines (same story, different wording) into one entry
      and records how many sources covered it — a signal of importance
@@ -17,7 +17,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Optional
 
 import feedparser  # pip install feedparser
 
@@ -38,13 +37,19 @@ DEDUP_SIMILARITY_THRESHOLD = 0.75
 # Each entry needs a "url" (the feed URL) and a "source" (a short human-readable
 # name that appears in the briefing). To add a new feed, just append to this list.
 #
+# FEED HISTORY (so future sessions know why these choices were made):
+#   Removed — Moneycontrol Business/Markets: feeds parse OK but haven't updated
+#              since April 2024. Completely stale as of 2026-05.
+#   Removed — Business Standard: SAXParseException on all URL variants (broken feed).
+#   Removed — Reuters Business: URLError (Reuters retired public RSS ~2020).
+#   Added   — Hindu BusinessLine, CNBC TV18, NDTV Profit: tested working, fresh articles.
+#
 FEEDS = [
-    {"url": "https://www.moneycontrol.com/rss/business.xml",                        "source": "Moneycontrol Business"},
-    {"url": "https://www.moneycontrol.com/rss/marketreports.xml",                   "source": "Moneycontrol Markets"},
     {"url": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms", "source": "Economic Times"},
     {"url": "https://www.livemint.com/rss/markets",                                 "source": "Livemint"},
-    {"url": "https://www.business-standard.com/rss/markets-106.rss",               "source": "Business Standard"},
-    {"url": "https://feeds.reuters.com/reuters/businessNews",                       "source": "Reuters Business"},
+    {"url": "https://www.thehindubusinessline.com/markets/?service=rss",            "source": "Hindu BusinessLine"},
+    {"url": "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/market.xml",          "source": "CNBC TV18"},
+    {"url": "https://feeds.feedburner.com/ndtvprofit-latest",                      "source": "NDTV Profit"},
 ]
 
 # ─── Symbol → common name mapping ────────────────────────────────────────────
@@ -100,31 +105,52 @@ def _parse_timestamp(entry: feedparser.FeedParserDict) -> datetime:
     return datetime.now(timezone.utc) - timedelta(hours=1)
 
 
-def _fetch_single_feed(feed_info: dict) -> list[dict]:
+def _fetch_single_feed(feed_info: dict) -> dict:
     """
-    Download and parse one RSS feed. Returns a list of article dicts.
+    Download and parse one RSS feed.
 
-    Each dict has keys: title, summary, link, published (datetime), source (str).
+    Returns a result dict with these keys:
+      articles  (list[dict])  — parsed article dicts, may be empty
+      source    (str)         — human-readable feed name
+      url       (str)         — the feed URL that was fetched
+      success   (bool)        — True if at least some entries were parsed
+      raw_count (int)         — number of entries parsed (before 24h filter)
+      error     (str | None)  — error description if success=False, else None
 
-    If the feed fails (network error, DNS failure, malformed XML), this function
-    logs a warning and returns an empty list. One bad feed will NOT crash the
-    whole run — the other feeds continue normally.
+    If the feed fails completely, articles is [] and success is False.
+    If the feed has XML issues but still returned some entries, articles is
+    populated and success is True (we use whatever we got).
     """
-    url = feed_info["url"]
+    url    = feed_info["url"]
     source = feed_info["source"]
-    articles = []
+    articles: list[dict] = []
+    error_msg: str | None = None
+    success = True
 
     try:
         feed = feedparser.parse(url)
 
-        # feedparser sets .bozo = True when there are XML parse issues.
-        # We still try to use whatever entries it managed to parse.
         if feed.bozo:
-            logger.warning(
-                "Feed '%s' had parse issues (%s). Partial results may be used.",
-                source,
-                type(feed.bozo_exception).__name__,
-            )
+            exc_name = type(feed.bozo_exception).__name__
+            if not feed.entries:
+                # The feed is completely unusable: network failure or unparseable XML
+                success = False
+                error_msg = f"{exc_name}: {feed.bozo_exception}"
+                logger.warning("Feed '%s' failed (%s) — skipping.", source, exc_name)
+                return {
+                    "articles":  [],
+                    "source":    source,
+                    "url":       url,
+                    "success":   False,
+                    "raw_count": 0,
+                    "error":     error_msg,
+                }
+            else:
+                # Bozo with partial entries: bad XML but feedparser salvaged something
+                logger.warning(
+                    "Feed '%s' has XML issues (%s) but returned %d entries — using them.",
+                    source, exc_name, len(feed.entries),
+                )
 
         for entry in feed.entries:
             title = entry.get("title", "").strip()
@@ -142,10 +168,19 @@ def _fetch_single_feed(feed_info: dict) -> list[dict]:
         logger.debug("Fetched %d articles from %s", len(articles), source)
 
     except Exception as exc:
-        # Catch-all: network timeouts, SSL errors, etc.
+        # Catch-all: network timeouts, SSL errors, unexpected feedparser errors
+        success = False
+        error_msg = f"{type(exc).__name__}: {exc}"
         logger.warning("Failed to fetch '%s': %s", source, exc)
 
-    return articles
+    return {
+        "articles":  articles,
+        "source":    source,
+        "url":       url,
+        "success":   success,
+        "raw_count": len(articles),
+        "error":     error_msg,
+    }
 
 
 def _is_within_24h(article: dict) -> bool:
@@ -229,9 +264,9 @@ def _matches_symbol_or_name(text: str, symbol: str, alt_names: list[str]) -> boo
     """
     Return True if 'text' contains the symbol or any of its alt_names as a whole word.
 
-    Uses regex word boundaries (\b) to avoid false positives.
-    Example without \b: "TCS" would match inside "tactics" — wrong.
-    Example with \b:    "TCS" only matches when surrounded by non-word characters.
+    Uses regex word boundaries (\\b) to avoid false positives.
+    Example without \\b: "TCS" would match inside "tactics" — wrong.
+    Example with \\b:    "TCS" only matches when surrounded by non-word characters.
     """
     all_names = [symbol] + alt_names
     for name in all_names:
@@ -270,13 +305,13 @@ def _tag_watchlist(articles: list[dict], symbols: list[str]) -> list[dict]:
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
-def fetch_headlines(watchlist_path: Path) -> tuple[list[dict], list[str]]:
+def fetch_headlines(watchlist_path: Path) -> tuple[list[dict], list[str], list[dict]]:
     """
     Main entry point for this module. Call this from main.py.
 
     Steps:
       1. Load the watchlist from watchlist_path
-      2. Fetch all 6 RSS feeds in parallel using threads
+      2. Fetch all RSS feeds in parallel using threads
       3. Filter to articles published in the last 24 hours
       4. Deduplicate near-identical headlines
       5. Tag articles that mention watchlist stocks
@@ -285,12 +320,21 @@ def fetch_headlines(watchlist_path: Path) -> tuple[list[dict], list[str]]:
         watchlist_path: Path to watchlist.txt
 
     Returns:
-        A tuple of:
-          - articles (list[dict]): Cleaned, deduped, tagged articles. Each dict has:
+        A tuple of three values:
+          articles (list[dict])
+            Cleaned, deduped, tagged articles. Each dict has:
               title (str), summary (str), link (str), published (datetime),
               sources (list[str]), watchlist_hits (list[str])
-          - symbols (list[str]): The watchlist symbols that were loaded
-                                 (passed to the AI so it knows what to look for)
+
+          symbols (list[str])
+            The watchlist symbols that were loaded (passed to the AI so it
+            knows what to look for in the briefing).
+
+          feed_results (list[dict])
+            One entry per feed, with keys:
+              source (str), url (str), success (bool),
+              raw_count (int), fresh_count (int), error (str|None)
+            Used by main.py to display the feed health summary.
     """
     # Step 1: Load watchlist
     symbols = _load_watchlist(watchlist_path)
@@ -299,10 +343,27 @@ def fetch_headlines(watchlist_path: Path) -> tuple[list[dict], list[str]]:
     # ThreadPoolExecutor runs each _fetch_single_feed call in its own thread.
     # max_workers = number of feeds means they all start at the same time.
     all_articles: list[dict] = []
+    raw_feed_results: list[dict] = []
+
     with ThreadPoolExecutor(max_workers=len(FEEDS)) as executor:
         futures = {executor.submit(_fetch_single_feed, feed): feed for feed in FEEDS}
         for future in as_completed(futures):
-            all_articles.extend(future.result())
+            result = future.result()
+            # Count how many articles from this feed pass the 24h filter
+            # (before global dedup, so this reflects the feed's raw contribution)
+            fresh_count = sum(1 for a in result["articles"] if _is_within_24h(a))
+            raw_feed_results.append({
+                "source":      result["source"],
+                "url":         result["url"],
+                "success":     result["success"],
+                "raw_count":   result["raw_count"],
+                "fresh_count": fresh_count,
+                "error":       result["error"],
+            })
+            all_articles.extend(result["articles"])
+
+    # Sort feed_results alphabetically so the health summary is consistent
+    feed_results = sorted(raw_feed_results, key=lambda r: r["source"])
 
     # Step 3: Keep only the last 24 hours
     recent = [a for a in all_articles if _is_within_24h(a)]
@@ -316,4 +377,4 @@ def fetch_headlines(watchlist_path: Path) -> tuple[list[dict], list[str]]:
     # Sort newest first so the AI sees the most recent news at the top
     tagged.sort(key=lambda a: a["published"], reverse=True)
 
-    return tagged, symbols
+    return tagged, symbols, feed_results
