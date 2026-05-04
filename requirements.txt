@@ -1,0 +1,28 @@
+# Stage 1 dependencies — pinned versions known to work together.
+#
+# If you get installation errors, try removing the version numbers
+# (e.g., just write "feedparser" instead of "feedparser==6.0.11")
+# and let pip pick the latest compatible versions.
+#
+# Install with:
+#   pip install -r requirements.txt
+#
+# Or inside a virtual environment (recommended):
+#   python -m venv .venv
+#   .venv\Scripts\activate          # Windows
+#   pip install -r requirements.txt
+
+# Parses RSS/Atom XML feeds — the news ingestion workhorse
+feedparser==6.0.11
+
+# Google Gemini AI client library
+# Note: Google is releasing a newer package called "google-genai" as a replacement.
+# This older package still works and is simpler for beginners.
+# If you hit issues, see the Troubleshooting section in README.md.
+google-generativeai==0.8.3
+
+# Loads your GEMINI_API_KEY from the .env file so you never hardcode secrets
+python-dotenv==1.0.1
+
+# Pretty terminal output — colored text, markdown rendering, rules/dividers
+rich==13.9.4

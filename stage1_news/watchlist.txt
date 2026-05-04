@@ -1,0 +1,20 @@
+# ─── Your Personal Stock Watchlist ───────────────────────────────────────────
+#
+# One NSE symbol per line. Lines starting with # are ignored.
+#
+# HOW TO USE:
+#   - Replace the examples below with the stocks YOU actually follow.
+#   - Use NSE symbols (e.g., RELIANCE, not RIL or Reliance Industries Ltd).
+#   - If your stock's symbol doesn't seem to get picked up in news, add its
+#     common name to the SYMBOL_NAME_MAP dict in rss_fetcher.py.
+#
+# The tool will highlight any news story that mentions these stocks and
+# give them their own section in the AI briefing (Section 8: Your Watchlist News).
+#
+# ─── Examples (edit these with your own picks) ────────────────────────────────
+
+RELIANCE
+TCS
+HDFCBANK
+INFY
+TATAMOTORS
