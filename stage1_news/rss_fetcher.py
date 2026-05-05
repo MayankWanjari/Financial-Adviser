@@ -58,6 +58,21 @@ FEEDS = [
 # appear in news headlines. The fetcher does a case-insensitive word-boundary
 # search for each of these strings.
 #
+# PRECISION vs RECALL TRADE-OFF:
+#   More names = more hits (higher recall) but also more false positives (lower
+#   precision). Short or ambiguous tokens are the danger zone:
+#
+#   BAD:  "HDFCBANK": ["HDFC Bank", "HDFC"]
+#         ↑ bare "HDFC" matches HDFC AMC, HDFC Life, HDFC Ltd Chairman news, etc.
+#
+#   GOOD: "HDFCBANK": ["HDFC Bank"]
+#         ↑ only matches articles specifically about the bank
+#
+#   Rule of thumb: only include a name/token if it would NEVER appear in an
+#   article about a *different* company. When in doubt, leave it out.
+#   The NSE symbol (e.g., "HDFCBANK") is always searched automatically —
+#   you don't need to repeat it in the list.
+#
 # HOW TO EXTEND:
 #   Add your own stock:  "WIPRO": ["Wipro"],
 #   Multiple names:      "BAJFINANCE": ["Bajaj Finance", "BAF"],
@@ -66,9 +81,11 @@ FEEDS = [
 # in the "Your Watchlist News" section of the briefing.
 #
 SYMBOL_NAME_MAP: dict[str, list[str]] = {
-    "RELIANCE":   ["Reliance", "RIL", "Reliance Industries"],
+    "RELIANCE":   ["Reliance Industries", "RIL"],
+    # NOTE: bare "Reliance" omitted — it also matches Reliance Power, Reliance Infra, etc.
     "TCS":        ["TCS", "Tata Consultancy", "Tata Consultancy Services"],
-    "HDFCBANK":   ["HDFC Bank", "HDFC"],
+    "HDFCBANK":   ["HDFC Bank"],
+    # NOTE: bare "HDFC" omitted — it matches HDFC AMC, HDFC Life, HDFC Ltd, etc.
     "INFY":       ["Infosys", "Infy"],
     "TATAMOTORS": ["Tata Motors"],
 }

@@ -91,6 +91,14 @@ Tone rules (follow these carefully):
   - Never make price predictions
   - Never say "will rise", "will fall", "expected to reach X" — say instead:
     "could face pressure", "may benefit depending on...", "worth watching if..."
+
+Numerical accuracy (follow these carefully):
+  - When different sources report different numbers for the same event, report the RANGE
+    or the most commonly cited value — never cherry-pick the highest or most dramatic figure
+  - Example: if sources say Brent was $112, $114, and $115, write
+    "Brent traded between $112–115, mostly cited near $114" — not "Brent touched $115"
+  - Apply this to any figure: index levels, FII flows, earnings numbers, rate changes
+  - Always lean toward sober, conservative reporting over drama
 """
 
 # ─── ELI12 addon ──────────────────────────────────────────────────────────────
