@@ -197,20 +197,26 @@ If you run the script twice in one day, the second file gets a `-2` suffix, etc.
 ### Gemini API errors / "model not available"
 The model name is set at the top of `stage1_news/ai_analyzer.py`:
 ```python
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-2.5-flash"
 ```
-If this model becomes unavailable on the free tier, swap it for one of these:
+If you hit quota limits, swap to an alternative in this order of preference:
 
-| Model name | Notes |
-|---|---|
-| `gemini-1.5-flash` | Older, very reliable, still free |
-| `gemini-1.5-flash-8b` | Smallest and fastest, good for testing |
-| `gemini-2.0-flash-lite` | Lighter version of 2.0-flash, also free |
+| Model name | Free RPD | Notes |
+|---|---|---|
+| `gemini-2.5-flash` | 500 | **Current default.** Best quality on free tier. |
+| `gemini-2.5-flash-lite` | 1,000 | More daily quota, slightly lower quality |
+| `gemini-1.5-flash` | ~1,500 | Older but reliable fallback |
+| `gemini-2.0-flash` | — | **Retiring March 2026 — do not use** |
 
 Check currently available models at: https://aistudio.google.com/
 
-### "Rate limit exceeded"
-The free tier has daily limits. If you hit them, wait until the next day (limits reset at midnight Pacific time). To reduce usage, use `--dry-run` when just testing.
+### "Rate limit exceeded" / quota errors
+The free tier has daily limits (500 requests/day for `gemini-2.5-flash`). When you hit them, the tool now:
+1. Prints a clear message explaining the cause and when quota resets (~midnight Pacific time)
+2. **Automatically saves your raw headlines** to `raw_headlines/YYYY-MM-DD.json` so the day's data isn't lost
+
+To get your briefing once quota resets: just re-run `python main.py`.
+To reduce usage during testing, use `--dry-run` (skips the AI call entirely).
 
 ### A feed keeps failing
 If one of the 6 sources gives repeated warnings, it may have changed its RSS URL.

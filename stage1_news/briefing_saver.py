@@ -55,6 +55,51 @@ def _next_available_path(directory: Path, date_str: str, extension: str) -> Path
         counter += 1
 
 
+def save_raw_headlines(
+    articles: list[dict],
+    symbols: list[str],
+    base_dir: Path,
+    mode_str: str = "Normal",
+) -> Path:
+    """
+    Save the raw article list to JSON in raw_headlines/ — no AI briefing needed.
+
+    Called by save_briefing() as part of a full run, and also by main.py when
+    the Gemini API call fails (e.g. quota exceeded) so the day's headlines are
+    preserved and can be re-analyzed later.
+
+    Returns:
+        Path to the saved JSON file.
+    """
+    raw_dir = base_dir / "raw_headlines"
+    raw_dir.mkdir(exist_ok=True)
+
+    now_utc  = datetime.now(timezone.utc)
+    date_str = now_utc.strftime("%Y-%m-%d")
+    raw_path = _next_available_path(raw_dir, date_str, "json")
+
+    # datetime objects can't go into JSON directly — convert to ISO string first
+    serializable_articles = []
+    for article in articles:
+        entry = article.copy()
+        entry["published"] = entry["published"].isoformat()
+        serializable_articles.append(entry)
+
+    raw_data = {
+        "generated_at":  now_utc.isoformat(),
+        "mode":          mode_str,
+        "watchlist":     symbols,
+        "article_count": len(articles),
+        "articles":      serializable_articles,
+    }
+
+    raw_path.write_text(
+        json.dumps(raw_data, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return raw_path
+
+
 def save_briefing(
     briefing_text: str,
     articles: list[dict],
@@ -79,9 +124,7 @@ def save_briefing(
     """
     # ── Create output directories (safe — does nothing if they already exist) ──
     briefings_dir = base_dir / "briefings"
-    raw_dir       = base_dir / "raw_headlines"
     briefings_dir.mkdir(exist_ok=True)
-    raw_dir.mkdir(exist_ok=True)
 
     # ── Timestamp for filenames and headers ───────────────────────────────────
     now_utc  = datetime.now(timezone.utc)
@@ -106,27 +149,7 @@ def save_briefing(
     briefing_path.write_text(header + briefing_text, encoding="utf-8")
 
     # ── 2. Save the raw JSON audit trail ─────────────────────────────────────
-    raw_path = _next_available_path(raw_dir, date_str, "json")
-
-    # datetime objects can't be serialized to JSON by default, so convert them
-    serializable_articles = []
-    for article in articles:
-        entry = article.copy()
-        entry["published"] = entry["published"].isoformat()  # e.g., "2024-01-15T08:30:00+00:00"
-        serializable_articles.append(entry)
-
-    raw_data = {
-        "generated_at":    now_utc.isoformat(),
-        "mode":            mode_str,
-        "watchlist":       symbols,
-        "article_count":   len(articles),
-        "articles":        serializable_articles,
-    }
-
-    raw_path.write_text(
-        json.dumps(raw_data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    raw_path = save_raw_headlines(articles=articles, symbols=symbols, base_dir=base_dir, mode_str=mode_str)
 
     # ── 3. Print the briefing to the terminal ─────────────────────────────────
     # rich's Markdown renderer gives you nicely formatted output with colors,

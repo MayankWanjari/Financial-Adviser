@@ -13,7 +13,7 @@ A personal AI-powered research tool for Indian stock market investing. Built in 
 ## Stack
 
 - Python 3.10+
-- Google Gemini API (free tier) — model: gemini-2.0-flash
+- Google Gemini API (free tier) — model: gemini-2.5-flash
 - Libraries: feedparser, google-generativeai, python-dotenv, rich
 - Storage: local markdown files + JSON for raw archives
 - No databases yet (added in Stage 2)
@@ -86,11 +86,12 @@ financial-advisor-ai/
 - 2026-05-05: Stage 1 config + docs created — .env.example, .gitignore, requirements.txt, README.md, PHILOSOPHY.md, JOURNAL.md
 - 2026-05-05: Stage 1 fully complete. git repo initialized with initial commit.
 - 2026-05-05: Bug fixes — replaced 4 dead/stale feeds (Moneycontrol x2, Business Standard, Reuters) with Hindu BusinessLine + CNBC TV18 + NDTV Profit; fixed source count display; fixed Rich markup eating [SourceName]; removed [:75] headline truncation in dry-run; added feed health summary to every run; added Windows UTF-8 encoding fix in main.py
+- 2026-05-05: Switched MODEL_NAME to gemini-2.5-flash (2.0-flash retiring Mar 2026); added specific 429/quota error handler with friendly message + reset-time estimate; extracted save_raw_headlines() so raw headlines are persisted to JSON even when the AI call fails
 
 ## Key design decisions (helpful for Stage 2 planning)
 
 - Deduplication threshold: 0.75 (constant DEDUP_SIMILARITY_THRESHOLD in rss_fetcher.py)
-- AI model: gemini-2.0-flash (constant MODEL_NAME in ai_analyzer.py)
+- AI model: gemini-2.5-flash (constant MODEL_NAME in ai_analyzer.py; fallback ladder: 2.5-flash-lite → 1.5-flash; avoid 2.0-flash, retiring Mar 2026)
 - Article data shape: {title, summary, link, published (datetime), sources (list[str]), watchlist_hits (list[str])}
 - fetch_headlines() returns 3-tuple: (articles, symbols, feed_results) — feed_results has per-feed health data
 - Briefing saved with YAML frontmatter header (date, mode, watchlist, count)

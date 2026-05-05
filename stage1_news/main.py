@@ -38,7 +38,7 @@ from rich.console import Console  # pip install rich
 # These files must be in the same directory as this script (stage1_news/).
 from rss_fetcher import fetch_headlines, SYMBOL_NAME_MAP
 from ai_analyzer import analyze_headlines
-from briefing_saver import save_briefing
+from briefing_saver import save_briefing, save_raw_headlines
 
 console = Console()
 
@@ -216,13 +216,24 @@ def main() -> None:
     console.print("   Sending headlines to Google's AI. This usually takes 10–30 seconds.")
     console.print("   [dim](The AI is reading all the headlines and writing your briefing)[/dim]")
 
-    # analyze_headlines() handles its own error messages and calls sys.exit(1) on failure
+    # analyze_headlines() handles its own error messages and calls sys.exit(1) on failure.
+    # For quota errors specifically, it returns None so we can save raw headlines first.
     briefing_text = analyze_headlines(
         articles        = articles,
         symbols         = symbols,
         symbol_name_map = SYMBOL_NAME_MAP,
         eli12_mode      = args.eli12,
     )
+
+    if briefing_text is None:
+        # Quota exceeded — save raw headlines so the day's data isn't lost
+        console.print()
+        console.print("[yellow]💾 Saving raw headlines so today's data isn't lost...[/yellow]")
+        raw_path = save_raw_headlines(articles=articles, symbols=symbols, base_dir=SCRIPT_DIR)
+        console.print(f"   Saved → {raw_path}")
+        console.print("   Once quota resets, re-run the same command to generate the briefing.")
+        _print_feed_health(feed_results)
+        sys.exit(1)
 
     console.print("[green]✅ AI analysis complete.[/green]")
 

@@ -19,16 +19,14 @@ from dotenv import load_dotenv       # pip install python-dotenv
 
 # ─── Model configuration ──────────────────────────────────────────────────────
 #
-# Change MODEL_NAME here if gemini-2.0-flash is unavailable on your account.
-#
-# Free-tier alternatives to try (in order of preference):
-#   "gemini-1.5-flash"      — slightly older, very reliable, still free
-#   "gemini-1.5-flash-8b"   — smallest/fastest model, good for debugging
-#   "gemini-2.0-flash-lite" — lighter version of 2.0-flash, also free
+# Primary: gemini-2.5-flash (recommended, 500 RPD free tier)
+# Alternatives if quota hit:
+#   - gemini-2.5-flash-lite (1000 RPD, lower quality)
+#   - gemini-1.5-flash (older but reliable)
+# Avoid: gemini-2.0-flash (retiring March 2026)
 #
 # You can check which models are available at: https://aistudio.google.com/
-#
-MODEL_NAME = "gemini-2.0-flash"
+MODEL_NAME = "gemini-2.5-flash"
 
 # ─── System instruction ───────────────────────────────────────────────────────
 #
@@ -178,7 +176,7 @@ def analyze_headlines(
     symbols: list[str],
     symbol_name_map: dict[str, list[str]],
     eli12_mode: bool = False,
-) -> str:
+) -> str | None:
     """
     Send the collected headlines to Gemini and return the AI briefing as a string.
 
@@ -189,10 +187,11 @@ def analyze_headlines(
         eli12_mode:      If True, appends the ELI12 tone override to the system instruction
 
     Returns:
-        The AI-generated briefing as a markdown-formatted string.
+        The AI-generated briefing as a markdown-formatted string, or None if the
+        Gemini quota was exceeded (the quota error message is already printed).
 
     Raises:
-        SystemExit(1): If the API key is missing or the API call fails.
+        SystemExit(1): If the API key is missing or a non-quota API error occurs.
                        Exits with a friendly error message instead of a stack trace.
     """
     # ── Step 1: Load the API key from .env ────────────────────────────────────
@@ -246,7 +245,37 @@ def analyze_headlines(
         sys.exit(1)
 
     except Exception as exc:
-        # Network errors, rate limits, invalid model name, etc.
+        # Check specifically for quota / rate-limit errors (HTTP 429)
+        exc_text = str(exc)
+        is_quota_error = (
+            "429" in exc_text
+            or "resource_exhausted" in exc_text.lower()
+            or "quota" in exc_text.lower()
+            or "rateLimitExceeded" in exc_text
+        )
+
+        if is_quota_error:
+            from datetime import datetime, timezone as _tz
+            now_utc = datetime.now(_tz.utc)
+            # Free-tier daily quotas typically reset around midnight Pacific Time (~08:00 UTC)
+            hours_left = (8 - now_utc.hour) % 24 or 24
+
+            print(f"\n❌  Gemini quota exceeded.")
+            print("    Possible causes:")
+            print(f"    - You hit today's free-tier daily limit (resets in ~{hours_left} hours)")
+            print("    - Your project doesn't have Generative Language API enabled")
+            print(f"    - The model '{MODEL_NAME}' isn't available on free tier in your region")
+            print()
+            print("    Try:")
+            print("    1. Wait 1 minute and run again (per-minute rate limit)")
+            print("    2. Verify your API key at https://aistudio.google.com/app/apikey")
+            print(f"    3. Alternative models: change MODEL_NAME in ai_analyzer.py to")
+            print("       'gemini-1.5-flash' or 'gemini-2.5-flash'")
+            print()
+            # Return None so main.py can save raw headlines before exiting
+            return None
+
+        # All other errors: network issues, invalid key, bad model name, etc.
         print(f"\n❌  Gemini API call failed: {exc}")
         print(f"    Model used: {MODEL_NAME}")
         print("    Things to check:")
