@@ -1,0 +1,34 @@
+# ─── Your Personal Stock Watchlist ───────────────────────────────────────────
+#
+# FORMAT:
+#   TICKER                         (no alt names)
+#   TICKER  # Alt Name 1, Alt Name 2   (with alt names for news matching)
+#
+# The text after '#' is a comma-separated list of names/abbreviations the news
+# tagger will search for in headlines. The NSE ticker symbol itself is always
+# searched automatically — you only need to list the ALTERNATES here.
+#
+# PRECISION vs RECALL TRADE-OFF:
+#   Only list a name if it would NEVER appear in an article about a DIFFERENT
+#   company. Short or ambiguous tokens are dangerous:
+#
+#     BAD:  HDFCBANK  # HDFC Bank, HDFC
+#           ↑ bare "HDFC" also matches HDFC AMC, HDFC Life, HDFC Ltd, etc.
+#
+#     GOOD: HDFCBANK  # HDFC Bank
+#           ↑ only matches articles specifically about the bank
+#
+# To add a stock with no alt names, just write the ticker on its own line.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# NOTE: bare "Reliance" omitted — also matches Reliance Power, Reliance Infra, etc.
+RELIANCE  # Reliance Industries, RIL
+
+TCS  # Tata Consultancy, Tata Consultancy Services
+
+# NOTE: bare "HDFC" omitted — also matches HDFC AMC, HDFC Life, HDFC Ltd, etc.
+HDFCBANK  # HDFC Bank
+
+INFY  # Infosys, Infy
+
+TATAMOTORS  # Tata Motors

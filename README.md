@@ -1,250 +1,251 @@
-# Indian Stock Market Research Tool — Stage 1: Daily Briefing
+# Financial Research AI — Indian Markets
 
-Run one command. Get a structured, AI-written market briefing in your terminal and saved as a markdown file. Powered by Google Gemini (free tier). No paid subscriptions needed.
+A personal AI-powered research assistant for Indian stock market investing. Chat in Hindi or English, and the AI fetches real data, analyzes news, screens stocks, and estimates intrinsic value — all from a single browser interface.
 
----
-
-## What this does
-
-Every time you run `python main.py`, the tool:
-
-1. **Fetches headlines** from 6 Indian financial news sources simultaneously:
-   Moneycontrol, Economic Times, Livemint, Business Standard, Reuters Business
-
-2. **Filters and deduplicates** — keeps only the last 24 hours, merges similar stories
-   (and tracks how many outlets covered each one — a signal of importance)
-
-3. **Sends everything to Gemini** — Google's free AI reads the headlines and writes
-   a structured briefing covering market stories, sector impacts, global context,
-   earnings, stocks to watch, and more
-
-4. **Saves the briefing** as a dated markdown file (`briefings/YYYY-MM-DD.md`)
-   and saves the raw data as JSON for your audit trail
-
-5. **Prints the briefing** to your terminal with colors and formatting
+**This is a research tool, not a financial advisor.** It organizes public information so you can think clearly. All decisions are yours.
 
 ---
 
-## Setup (step by step for Windows)
+## Features
 
-### Prerequisites
-
-- Python 3.10 or newer. Check with:
-  ```
-  python --version
-  ```
-  If Python isn't installed, download it from https://www.python.org/downloads/
-  During installation, tick **"Add Python to PATH"**.
-
-- A Google account (for the free Gemini API key)
+| Feature | What it does |
+|---------|-------------|
+| 📊 **Stock Snapshot** | Live price, PE, ROE, D/E, margins, 52W range for any NSE stock |
+| ⚖️ **Compare Stocks** | Side-by-side fundamental table for 2–5 stocks |
+| 📰 **Market Briefing** | AI-analyzed daily news from 15+ Indian financial RSS feeds |
+| 🔍 **Stock News** | News headlines filtered to a specific company |
+| 🧮 **Valuation** | Graham Number + PE-based fair value with margin of safety |
+| 🔎 **Screener** | Filter Nifty 50 or Nifty Midcap 150 by PE, ROE, D/E, market cap, sector |
+| 🏆 **Opportunity Scorer** | Score any stock 0–100 on 6 fundamental criteria (PE, ROE, D/E, Graham gap, margin, yield) |
+| 🔭 **Find Opportunities** | Scan all Nifty 50 stocks and rank by fundamental score |
+| 📋 **Watchlist Analysis** | Score all your watchlist stocks at once and rank them |
+| 💼 **Portfolio Tracker** | Track your holdings with live P&L and fundamental scores |
+| 📈 **PE Band History** | See if a stock is cheap or expensive vs its own 5-year history |
+| 📉 **Technical Indicators** | SMA 50/200, RSI-14, golden/death cross, support & resistance |
+| 👥 **Sector Peer Comparison** | Rank a stock vs all its sector peers on fundamentals |
+| 💰 **Dividend History** | Annual payouts, CAGR, consistency label (Growing/Consistent/Irregular) |
+| 📅 **Daily Master Report** | One command for market news + top underrated picks |
+| 📈 **Price Chart** | Auto-renders 1-month chart when you ask about a single stock |
+| 🌐 **Hindi/Hinglish** | Responds in whatever language you write in |
 
 ---
 
-### Step 1 — Download / clone the project
+## Prerequisites
 
-If you have git:
-```powershell
-git clone <your-repo-url>
+- Python 3.10 or newer
+- A free **Gemini API key** from Google AI Studio
+- Internet connection (fetches live data from Yahoo Finance and RSS news feeds)
+
+---
+
+## Setup
+
+### 1. Clone the repository
+
+```bash
+git clone <repo-url>
 cd financial-advisor-ai
 ```
 
-Or just download and unzip the project folder.
+### 2. Create a virtual environment
 
----
-
-### Step 2 — Create a virtual environment (recommended)
-
-A virtual environment keeps this project's packages separate from your system Python.
-
-```powershell
-cd financial-advisor-ai
+```bash
+# Windows
 python -m venv .venv
 .venv\Scripts\activate
+
+# macOS / Linux
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-Your terminal prompt will change to show `(.venv)` — that means it's active.
+### 3. Install dependencies
 
-> **Mac/Linux:** Use `source .venv/bin/activate` instead of the last line.
-
----
-
-### Step 3 — Install dependencies
-
-```powershell
+```bash
 pip install -r requirements.txt
 ```
 
-This installs: feedparser, google-generativeai, python-dotenv, rich.
+### 4. Get a free Gemini API key
 
----
+1. Go to [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+2. Sign in with a Google account
+3. Click **Create API key** → copy the key
 
-### Step 4 — Get a free Gemini API key
+The free tier gives you 500 requests/day on `gemini-2.5-flash`. That's enough for personal daily use.
 
-1. Go to **https://aistudio.google.com/app/apikey**
-2. Sign in with your Google account
-3. Click **"Create API Key"**
-4. Copy the key (it starts with `AIza...`)
+### 5. Create your `.env` file
 
----
-
-### Step 5 — Create your `.env` file
-
-1. In the project root folder, find the file called `.env.example`
-2. Copy it and rename the copy to `.env` (no `.example` at the end)
-
-   In PowerShell:
-   ```powershell
-   Copy-Item .env.example .env
-   ```
-
-3. Open `.env` in your editor and replace `your_key_here` with your actual API key:
-   ```
-   GEMINI_API_KEY=AIzaSyABC123...your_actual_key_here
-   ```
-
-4. Save the file. **Never share this file or commit it to git** — it's already in `.gitignore`.
-
----
-
-### Step 6 — Run it!
-
-```powershell
-cd stage1_news
-python main.py
+```bash
+cp .env.example .env
 ```
 
-You should see progress messages, then the full briefing printed to your terminal.
-A saved copy appears in `stage1_news/briefings/`.
+Open `.env` and fill in your key:
 
----
-
-## Usage
-
-### Normal briefing
-```powershell
-python main.py
+```
+GEMINI_API_KEY=your_key_here
 ```
 
-### ELI12 mode — explains everything simply
-```powershell
-python main.py --eli12
-```
-Good for when you encounter unfamiliar topics. Uses plain language and analogies.
+> **Never commit `.env` to git.** It's already in `.gitignore`.
 
-### Dry run — test the fetcher without using the AI
-```powershell
-python main.py --dry-run
-```
-Fetches and deduplicates headlines but stops before calling Gemini. Useful for:
-- Checking that your internet connection and RSS feeds work
-- Debugging without spending your free API quota
+### 6. (Optional) Customize your watchlist
 
-### Combine flags
-```powershell
-python main.py --eli12 --dry-run
+Edit `config/watchlist.txt` — one NSE ticker per line. Lines starting with `#` are ignored. You can add alternate names after `#` so the news briefing matches them in headlines:
+
+```
+RELIANCE   # Reliance, RIL, Mukesh Ambani
+TCS        # Tata Consultancy, Tata Consulting
+HDFCBANK
+M&M        # Mahindra, M and M
 ```
 
 ---
 
-## Customizing your watchlist
+## Running the app
 
-Open `stage1_news/watchlist.txt` in your editor. Replace the example stocks with
-the ones you actually follow. Use NSE symbols (uppercase, no spaces):
-
-```
-WIPRO
-BAJFINANCE
-LTIM
-NESTLEIND
+```bash
+streamlit run app.py
 ```
 
-The AI will give these stocks their own section (**⭐ Your Watchlist News**) if
-any of them appear in today's headlines.
+The app opens at `http://localhost:8501` in your browser. Keep the terminal open while you use it.
 
-**If your stock isn't being recognized:** Its name in news headlines might differ
-from its NSE symbol. Open `stage1_news/rss_fetcher.py` and find `SYMBOL_NAME_MAP`.
-Add an entry like:
+---
 
-```python
-"BAJFINANCE": ["Bajaj Finance", "BAF"],
+## Example questions
+
+```
+# Stock data
+RELIANCE ka snapshot dikhao
+Compare TCS, Infosys aur Wipro
+HDFCBANK ka PE kya hai?
+
+# Valuation
+ONGC ki intrinsic value kya hai?
+Is Nestle overvalued?
+
+# Fundamental scoring
+TATAMOTORS ka score kya hai?
+Find the best opportunities in Nifty 50
+Meri watchlist analyze karo
+
+# Portfolio
+Add 10 shares of RELIANCE at 2800 to my portfolio
+Show my portfolio P&L
+Remove WIPRO from portfolio
+
+# Historical analysis
+HDFC Bank ka PE band history dikhao — cheap hai ya expensive?
+RELIANCE ka technical analysis karo
+ITC ke dividend history dikhao (last 5 years)
+TCS ko IT sector ke baaki stocks se compare karo
+
+# News
+Aaj market mein kya hua?
+TATAMOTORS ke baare mein koi news hai?
+Daily master report dikhao
+
+# Screener (takes 1-2 min for Nifty 50, longer for midcap)
+PE under 15 wale Nifty stocks dikhao
+IT sector stocks with ROE above 20%
+Low debt midcap stocks (D/E below 0.5)
+Screen both Nifty 50 and midcap with ROE above 15%
+
+# Watchlist
+Meri watchlist dikhao
+WIPRO add karo
+INFY hata do
 ```
 
 ---
 
-## Output files
+## Project structure
 
-| File | What it is |
-|------|-----------|
-| `stage1_news/briefings/YYYY-MM-DD.md` | Your daily briefing. Open in VS Code or any markdown viewer. |
-| `stage1_news/raw_headlines/YYYY-MM-DD.json` | The raw headlines the AI was given. Good for fact-checking. |
+```
+financial-advisor-ai/
+├── app.py                    <- Streamlit chat UI — start here
+├── agent/
+│   ├── brain.py              <- Gemini agent with function calling + retry logic
+│   ├── dispatch.py           <- Tool execution bridge (maps Gemini calls → data/)
+│   ├── tools.py              <- FunctionDeclaration schemas for Gemini
+│   └── prompts.py            <- Agent personality and response format rules
+├── data/
+│   ├── stock_data.py         <- yfinance wrapper (15-min cache)
+│   ├── news_fetcher.py       <- RSS feed fetcher + deduplication
+│   ├── news_analyzer.py      <- Gemini news briefing (daily cache)
+│   ├── screener.py           <- Stock screener (Nifty 50 + Midcap 150)
+│   ├── valuation.py          <- Graham Number + PE fair value
+│   ├── scorer.py             <- 0-100 fundamental score across 6 criteria
+│   ├── portfolio.py          <- Holdings tracker with live P&L
+│   ├── pe_bands.py           <- Historical PE band analysis (1-hr cache)
+│   ├── technicals.py         <- SMA, RSI, golden/death cross (15-min cache)
+│   ├── peers.py              <- Sector peer comparison
+│   ├── dividends.py          <- Dividend history + CAGR (1-hr cache)
+│   ├── cache.py              <- File-based JSON cache with TTL
+│   └── session.py            <- Cross-session conversation persistence
+├── config/
+│   ├── watchlist.txt         <- Your tracked stocks (edit freely)
+│   ├── feeds.json            <- RSS feed URLs
+│   ├── nifty50.txt           <- Nifty 50 screener universe
+│   ├── midcap150.txt         <- Nifty Midcap 150 screener universe (update quarterly)
+│   ├── sector_peers.json     <- Sector groupings for peer comparison
+│   └── portfolio.json        <- Your holdings (auto-created, gitignored)
+├── tests/                    <- 147 unit tests, all offline (no network)
+│   ├── conftest.py           <- Shared test fixtures
+│   └── test_*.py             <- One file per module
+├── cache/                    <- Auto-generated cache files, gitignored
+├── .env                      <- Your secrets (never commit this)
+└── requirements.txt
+```
 
-If you run the script twice in one day, the second file gets a `-2` suffix, etc.
+---
+
+## Caching
+
+To stay within the free API quota, responses are cached locally:
+
+| Data | Cache duration |
+|------|----------------|
+| Stock snapshots | 15 minutes |
+| Technical indicators | 15 minutes |
+| News briefing | Once per day (re-generates after midnight) |
+| PE band history | 1 hour |
+| Dividend history | 1 hour |
+
+Cache files live in `cache/` and are gitignored. Delete them to force a fresh fetch.
+
+---
+
+## Running the tests
+
+```bash
+python -m pytest tests/ -v
+```
+
+All 147 tests are offline — they mock file paths and don't call Yahoo Finance or Gemini. They run in under 2 seconds.
 
 ---
 
 ## Troubleshooting
 
-### "GEMINI_API_KEY not found"
-- Make sure `.env` exists in the project root (not `.env.example`)
-- Make sure the key is on the line: `GEMINI_API_KEY=AIza...`
-- Make sure there are no spaces around the `=`
+**"GEMINI_API_KEY not found"**
+Add `GEMINI_API_KEY=your_key` to `.env` in the project root, then refresh the page.
 
-### "No articles found in the last 24 hours"
-- Try again — feeds are sometimes slow to update
-- This can happen on weekends or market holidays
-- Run `python main.py --dry-run` to check if the fetcher is working
+**"Gemini quota exceeded (HTTP 429)"**
+You've hit the free-tier daily limit. Wait until midnight Pacific Time (~08:00 UTC) for the daily quota to reset. For per-minute limits, wait 60 seconds and retry.
 
-### Gemini API errors / "model not available"
-The model name is set at the top of `stage1_news/ai_analyzer.py`:
-```python
-MODEL_NAME = "gemini-2.5-flash"
-```
-If you hit quota limits, swap to an alternative in this order of preference:
+**Transient errors / "503 Service Unavailable"**
+The agent retries automatically up to 3 times with exponential backoff (2s, 4s, 8s). If it still fails, try again in a minute.
 
-| Model name | Free RPD | Notes |
-|---|---|---|
-| `gemini-2.5-flash` | 500 | **Current default.** Best quality on free tier. |
-| `gemini-2.5-flash-lite` | 1,000 | More daily quota, slightly lower quality |
-| `gemini-1.5-flash` | ~1,500 | Older but reliable fallback |
-| `gemini-2.0-flash` | — | **Retiring March 2026 — do not use** |
+**Stock data shows N/A for some fields**
+Yahoo Finance doesn't carry all fields for all Indian stocks (especially PSUs and some midcaps). This is a data source limitation, not a bug.
 
-Check currently available models at: https://aistudio.google.com/
+**Screener takes a long time**
+Screening requires one yfinance fetch per stock with a 1-second delay between each to avoid rate limiting. Expected times:
+- Nifty 50: ~1–2 minutes
+- Midcap 150: ~3–4 minutes
+- Both combined: ~5–6 minutes
 
-### "Rate limit exceeded" / quota errors
-The free tier has daily limits (500 requests/day for `gemini-2.5-flash`). When you hit them, the tool now:
-1. Prints a clear message explaining the cause and when quota resets (~midnight Pacific time)
-2. **Automatically saves your raw headlines** to `raw_headlines/YYYY-MM-DD.json` so the day's data isn't lost
+**"Module not found" errors**
+Make sure you activated the virtual environment before running `pip install -r requirements.txt` and `streamlit run app.py`.
 
-To get your briefing once quota resets: just re-run `python main.py`.
-To reduce usage during testing, use `--dry-run` (skips the AI call entirely).
-
-### A feed keeps failing
-If one of the 6 sources gives repeated warnings, it may have changed its RSS URL.
-Check the URL in `stage1_news/rss_fetcher.py` (look for the `FEEDS` list).
-One failing feed doesn't break the tool — the other 5 continue normally.
-
-### pip install fails
-Try removing the version numbers from `requirements.txt` and running again:
-```powershell
-pip install feedparser google-generativeai python-dotenv rich
-```
-
-### `.venv\Scripts\activate` gives an error about execution policy
-Run this in PowerShell (one time only):
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-Then try activating again.
-
----
-
-## What's coming in later stages
-
-| Stage | What it adds |
-|---|---|
-| **Stage 2** | Pull live price data for your watchlist (NSE/BSE via free APIs) |
-| **Stage 3** | Stock screener — filter by PE ratio, ROE, debt, etc. |
-| **Stage 4** | Ask questions to a library of investing books (RAG system) |
-| **Stage 5** | Web dashboard (Streamlit) — see everything in a browser |
-
-Each stage builds on the previous one. Stage 1 output feeds into Stage 2, and so on.
+**Chart doesn't appear**
+Charts only show for single-stock snapshot queries (not comparisons or news). If plotly isn't installed, run `pip install plotly`.

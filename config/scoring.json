@@ -1,0 +1,66 @@
+{
+  "value": {
+    "max_points": 20,
+    "tiers": [
+      {"threshold": 15, "points": 20, "label": "well below market average (excellent value)"},
+      {"threshold": 22, "points": 15, "label": "near market average (fair value)"},
+      {"threshold": 30, "points": 10, "label": "above market average (moderate premium)"},
+      {"threshold": 50, "points": 5,  "label": "significantly above market average"},
+      {"threshold": null, "points": 0, "label": "very high (possible growth premium or earnings pressure)"}
+    ]
+  },
+  "quality": {
+    "max_points": 20,
+    "tiers": [
+      {"threshold_min": 0.20, "points": 20, "label": "exceptional returns"},
+      {"threshold_min": 0.15, "points": 15, "label": "good capital efficiency"},
+      {"threshold_min": 0.10, "points": 8,  "label": "average/mediocre returns"},
+      {"threshold_min": 0.05, "points": 4,  "label": "poor returns on equity"},
+      {"threshold_min": null, "points": 0,  "label": "very weak or negative returns"}
+    ]
+  },
+  "safety": {
+    "max_points": 15,
+    "tiers": [
+      {"threshold": 0.3, "points": 15, "label": "very low debt, highly safe"},
+      {"threshold": 0.8, "points": 10, "label": "manageable debt levels"},
+      {"threshold": 1.5, "points": 5,  "label": "moderate to high leverage"},
+      {"threshold": 2.5, "points": 2,  "label": "high leverage, elevated risk"},
+      {"threshold": null, "points": 0, "label": "dangerously high debt"}
+    ]
+  },
+  "profitability": {
+    "max_points": 15,
+    "tiers": [
+      {"threshold_min": 0.15, "points": 15, "label": "excellent pricing power/margins"},
+      {"threshold_min": 0.10, "points": 10, "label": "healthy margins"},
+      {"threshold_min": 0.05, "points": 5,  "label": "thin margins"},
+      {"threshold_min": null, "points": 0,  "label": "very low or negative margins"}
+    ]
+  },
+  "dividend": {
+    "max_points": 10,
+    "tiers": [
+      {"threshold_min": 3.0, "points": 10, "label": "strong income generator"},
+      {"threshold_min": 1.5, "points": 6,  "label": "moderate steady yield"},
+      {"threshold_min": 0.5, "points": 2,  "label": "token dividend"},
+      {"threshold_min": null, "points": 0, "label": "pays no/negligible dividend"}
+    ]
+  },
+  "graham_gap": {
+    "max_points": 20,
+    "tiers": [
+      {"threshold_min": 33, "points": 20, "label": "deep value, strong margin of safety"},
+      {"threshold_min": 15, "points": 15, "label": "trading below intrinsic value"},
+      {"threshold_min": 0,  "points": 10, "label": "near fair value estimate"},
+      {"threshold_min": -25, "points": 5, "label": "trading at a premium to intrinsic value"},
+      {"threshold_min": null, "points": 0, "label": "significant premium / overvalued by Graham metrics"}
+    ]
+  },
+  "grades": {
+    "A": 80,
+    "B": 65,
+    "C": 50,
+    "D": 35
+  }
+}

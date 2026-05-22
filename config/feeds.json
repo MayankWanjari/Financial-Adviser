@@ -1,0 +1,22 @@
+[
+  {
+    "url": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+    "source": "Economic Times"
+  },
+  {
+    "url": "https://www.livemint.com/rss/markets",
+    "source": "Livemint"
+  },
+  {
+    "url": "https://www.thehindubusinessline.com/markets/?service=rss",
+    "source": "Hindu BusinessLine"
+  },
+  {
+    "url": "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/market.xml",
+    "source": "CNBC TV18"
+  },
+  {
+    "url": "https://feeds.feedburner.com/ndtvprofit-latest",
+    "source": "NDTV Profit"
+  }
+]

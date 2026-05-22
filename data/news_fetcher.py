@@ -1,16 +1,24 @@
 """
-rss_fetcher.py — Fetch, filter, deduplicate, and tag RSS headlines.
+news_fetcher.py — Fetch, filter, deduplicate, and tag RSS headlines.
 
-This is the "data collection" layer of Stage 1. It:
-  1. Pulls news from 5 Indian financial RSS feeds in parallel (faster than one-by-one)
-  2. Keeps only articles published in the last 24 hours
-  3. Merges near-duplicate headlines (same story, different wording) into one entry
-     and records how many sources covered it — a signal of importance
-  4. Tags any headline that mentions a stock from your watchlist.txt
+This is the "data collection" layer for the news pipeline. It:
+  1. Loads RSS feed URLs from config/feeds.json (not hardcoded)
+  2. Pulls news from all feeds in parallel (faster than one-by-one)
+  3. Keeps only articles published in the last 24 hours
+  4. Merges near-duplicate headlines (same story, different wording) into one
+     entry and records how many sources covered it — a signal of importance
+  5. Tags any headline that mentions a stock from config/watchlist.txt
+
+Refactored from stage1_news/rss_fetcher.py. Key changes vs the legacy version:
+  - FEEDS list moved out of code into config/feeds.json (editable without touching code)
+  - SYMBOL_NAME_MAP moved out of code into config/watchlist.txt (TICKER  # Alt, Names format)
+  - No sys.exit(), no print() — raises exceptions instead
+  - fetch_headlines() now takes a feeds_path argument alongside watchlist_path
 
 Nothing in this file calls the AI or writes to disk — it just returns clean data.
 """
 
+import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -32,69 +40,120 @@ import feedparser  # pip install feedparser
 #
 DEDUP_SIMILARITY_THRESHOLD = 0.75
 
-# ─── RSS feed list ────────────────────────────────────────────────────────────
-#
-# Each entry needs a "url" (the feed URL) and a "source" (a short human-readable
-# name that appears in the briefing). To add a new feed, just append to this list.
-#
-# FEED HISTORY (so future sessions know why these choices were made):
-#   Removed — Moneycontrol Business/Markets: feeds parse OK but haven't updated
-#              since April 2024. Completely stale as of 2026-05.
-#   Removed — Business Standard: SAXParseException on all URL variants (broken feed).
-#   Removed — Reuters Business: URLError (Reuters retired public RSS ~2020).
-#   Added   — Hindu BusinessLine, CNBC TV18, NDTV Profit: tested working, fresh articles.
-#
-FEEDS = [
-    {"url": "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms", "source": "Economic Times"},
-    {"url": "https://www.livemint.com/rss/markets",                                 "source": "Livemint"},
-    {"url": "https://www.thehindubusinessline.com/markets/?service=rss",            "source": "Hindu BusinessLine"},
-    {"url": "https://www.cnbctv18.com/commonfeeds/v1/cne/rss/market.xml",          "source": "CNBC TV18"},
-    {"url": "https://feeds.feedburner.com/ndtvprofit-latest",                      "source": "NDTV Profit"},
-]
-
-# ─── Symbol → common name mapping ────────────────────────────────────────────
-#
-# This dict maps NSE stock symbols to the names and abbreviations that typically
-# appear in news headlines. The fetcher does a case-insensitive word-boundary
-# search for each of these strings.
-#
-# PRECISION vs RECALL TRADE-OFF:
-#   More names = more hits (higher recall) but also more false positives (lower
-#   precision). Short or ambiguous tokens are the danger zone:
-#
-#   BAD:  "HDFCBANK": ["HDFC Bank", "HDFC"]
-#         ↑ bare "HDFC" matches HDFC AMC, HDFC Life, HDFC Ltd Chairman news, etc.
-#
-#   GOOD: "HDFCBANK": ["HDFC Bank"]
-#         ↑ only matches articles specifically about the bank
-#
-#   Rule of thumb: only include a name/token if it would NEVER appear in an
-#   article about a *different* company. When in doubt, leave it out.
-#   The NSE symbol (e.g., "HDFCBANK") is always searched automatically —
-#   you don't need to repeat it in the list.
-#
-# HOW TO EXTEND:
-#   Add your own stock:  "WIPRO": ["Wipro"],
-#   Multiple names:      "BAJFINANCE": ["Bajaj Finance", "BAF"],
-#
-# This dict is also imported by ai_analyzer.py so the AI knows what to look for
-# in the "Your Watchlist News" section of the briefing.
-#
-SYMBOL_NAME_MAP: dict[str, list[str]] = {
-    "RELIANCE":   ["Reliance Industries", "RIL"],
-    # NOTE: bare "Reliance" omitted — it also matches Reliance Power, Reliance Infra, etc.
-    "TCS":        ["TCS", "Tata Consultancy", "Tata Consultancy Services"],
-    "HDFCBANK":   ["HDFC Bank"],
-    # NOTE: bare "HDFC" omitted — it matches HDFC AMC, HDFC Life, HDFC Ltd, etc.
-    "INFY":       ["Infosys", "Infy"],
-    "TATAMOTORS": ["Tata Motors"],
-}
-
 # ─── Logging ──────────────────────────────────────────────────────────────────
-# WARNING level means we only print problems, not routine info. Change to
+# WARNING level means we only surface problems, not routine info. Change to
 # logging.DEBUG if you want verbose output while developing.
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+# ─── Config loaders ───────────────────────────────────────────────────────────
+
+
+def _load_feeds(feeds_path: Path) -> list[dict]:
+    """
+    Load the RSS feed list from a JSON file.
+
+    Expected format: a JSON array of objects, each with "url" and "source" keys.
+    Example:
+        [{"url": "https://...", "source": "Economic Times"}, ...]
+
+    Args:
+        feeds_path: Path to feeds.json.
+
+    Raises:
+        FileNotFoundError: If the JSON file doesn't exist.
+        ValueError: If the JSON is malformed or the array is empty.
+    """
+    if not feeds_path.exists():
+        raise FileNotFoundError(
+            f"Feeds config not found: {feeds_path}\n"
+            f"Create '{feeds_path.name}' as a JSON array of {{url, source}} objects."
+        )
+
+    try:
+        feeds = json.loads(feeds_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"'{feeds_path.name}' contains invalid JSON: {exc}") from exc
+
+    if not isinstance(feeds, list) or not feeds:
+        raise ValueError(
+            f"'{feeds_path.name}' must be a non-empty JSON array of "
+            f"{{\"url\": \"...\", \"source\": \"...\"}} objects."
+        )
+
+    return feeds
+
+
+def _parse_watchlist_file(watchlist_path: Path) -> list[tuple[str, list[str]]]:
+    """
+    Parse watchlist.txt and return a list of (ticker, alt_names) pairs.
+
+    Handles two line formats:
+      RELIANCE                          → ('RELIANCE', [])
+      RELIANCE  # Reliance Ind, RIL     → ('RELIANCE', ['Reliance Ind', 'RIL'])
+
+    Lines starting with '#' (pure comment lines) and blank lines are skipped.
+    The '#' character on a ticker line is the alt-names delimiter, not a comment.
+
+    If the file doesn't exist, logs a warning and returns an empty list
+    (watchlist tagging will be skipped, but the rest of the pipeline continues).
+    """
+    if not watchlist_path.exists():
+        logger.warning(
+            "watchlist.txt not found at %s — no watchlist tagging.", watchlist_path
+        )
+        return []
+
+    entries = []
+    for line in watchlist_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+
+        # Skip blank lines and pure comment lines (lines that START with #)
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        # Split on the first '#' to separate ticker from alternate names
+        if "#" in stripped:
+            ticker_part, names_part = stripped.split("#", 1)
+            ticker = ticker_part.strip().upper()
+            # Build the alt names list, dropping any empty items after splitting
+            alt_names = [n.strip() for n in names_part.split(",") if n.strip()]
+        else:
+            ticker = stripped.upper()
+            alt_names = []
+
+        if ticker:
+            entries.append((ticker, alt_names))
+
+    return entries
+
+
+def build_symbol_name_map(watchlist_path: Path) -> dict[str, list[str]]:
+    """
+    Build a symbol → alternate names dict from watchlist.txt.
+
+    This is the refactored equivalent of the old SYMBOL_NAME_MAP constant in
+    rss_fetcher.py. The agent and news_analyzer use this to know what names to
+    look for in headlines when checking the user's watchlist.
+
+    Returns a dict like:
+        {
+            "RELIANCE":   ["Reliance Industries", "RIL"],
+            "TCS":        ["Tata Consultancy", "Tata Consultancy Services"],
+            "HDFCBANK":   ["HDFC Bank"],
+            ...
+        }
+
+    Tickers with no alt-name column still appear in the dict with an empty list.
+
+    Args:
+        watchlist_path: Path to watchlist.txt.
+    """
+    return {
+        ticker: alt_names
+        for ticker, alt_names in _parse_watchlist_file(watchlist_path)
+    }
 
 
 # ─── Internal helper functions ────────────────────────────────────────────────
@@ -257,26 +316,6 @@ def _deduplicate(articles: list[dict]) -> list[dict]:
     return unique
 
 
-def _load_watchlist(watchlist_path: Path) -> list[str]:
-    """
-    Read watchlist.txt and return a list of stock symbols (uppercase).
-
-    Lines starting with '#' and blank lines are ignored.
-    If the file doesn't exist, returns an empty list with a warning.
-    """
-    if not watchlist_path.exists():
-        logger.warning("watchlist.txt not found at %s — no watchlist tagging.", watchlist_path)
-        return []
-
-    symbols = []
-    for line in watchlist_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line and not line.startswith("#"):
-            symbols.append(line.upper())
-
-    return symbols
-
-
 def _matches_symbol_or_name(text: str, symbol: str, alt_names: list[str]) -> bool:
     """
     Return True if 'text' contains the symbol or any of its alt_names as a whole word.
@@ -294,7 +333,11 @@ def _matches_symbol_or_name(text: str, symbol: str, alt_names: list[str]) -> boo
     return False
 
 
-def _tag_watchlist(articles: list[dict], symbols: list[str]) -> list[dict]:
+def _tag_watchlist(
+    articles: list[dict],
+    symbols: list[str],
+    symbol_name_map: dict[str, list[str]],
+) -> list[dict]:
     """
     For each article, find which watchlist stocks it mentions.
 
@@ -302,7 +345,12 @@ def _tag_watchlist(articles: list[dict], symbols: list[str]) -> list[dict]:
     (empty list if no watchlist stocks are mentioned).
 
     Matching checks both the symbol itself (e.g., "TCS") and any alternate
-    names from SYMBOL_NAME_MAP (e.g., "Tata Consultancy Services").
+    names from symbol_name_map (e.g., "Tata Consultancy Services").
+
+    Args:
+        articles:        Deduplicated article list.
+        symbols:         Ticker list from the watchlist file.
+        symbol_name_map: Dict of ticker → alternate names, from build_symbol_name_map().
     """
     for article in articles:
         # Search both title and summary
@@ -310,7 +358,7 @@ def _tag_watchlist(articles: list[dict], symbols: list[str]) -> list[dict]:
         hits = []
 
         for symbol in symbols:
-            alt_names = SYMBOL_NAME_MAP.get(symbol, [])
+            alt_names = symbol_name_map.get(symbol, [])
             if _matches_symbol_or_name(search_text, symbol, alt_names):
                 hits.append(symbol)
 
@@ -322,19 +370,24 @@ def _tag_watchlist(articles: list[dict], symbols: list[str]) -> list[dict]:
 # ─── Public API ───────────────────────────────────────────────────────────────
 
 
-def fetch_headlines(watchlist_path: Path) -> tuple[list[dict], list[str], list[dict]]:
+def fetch_headlines(
+    watchlist_path: Path,
+    feeds_path: Path,
+) -> tuple[list[dict], list[str], list[dict]]:
     """
-    Main entry point for this module. Call this from main.py.
+    Main entry point for this module. Call this from the agent's news tool.
 
     Steps:
-      1. Load the watchlist from watchlist_path
-      2. Fetch all RSS feeds in parallel using threads
-      3. Filter to articles published in the last 24 hours
-      4. Deduplicate near-identical headlines
-      5. Tag articles that mention watchlist stocks
+      1. Load the RSS feed list from feeds_path (JSON)
+      2. Load watchlist symbols + alternate names from watchlist_path
+      3. Fetch all RSS feeds in parallel using threads
+      4. Filter to articles published in the last 24 hours
+      5. Deduplicate near-identical headlines
+      6. Tag articles that mention watchlist stocks
 
     Args:
-        watchlist_path: Path to watchlist.txt
+        watchlist_path: Path to config/watchlist.txt
+        feeds_path:     Path to config/feeds.json
 
     Returns:
         A tuple of three values:
@@ -345,25 +398,34 @@ def fetch_headlines(watchlist_path: Path) -> tuple[list[dict], list[str], list[d
 
           symbols (list[str])
             The watchlist symbols that were loaded (passed to the AI so it
-            knows what to look for in the briefing).
+            knows what to look for in section 8 of the briefing).
 
           feed_results (list[dict])
             One entry per feed, with keys:
               source (str), url (str), success (bool),
               raw_count (int), fresh_count (int), error (str|None)
-            Used by main.py to display the feed health summary.
-    """
-    # Step 1: Load watchlist
-    symbols = _load_watchlist(watchlist_path)
+            Used by the agent to report feed health if needed.
 
-    # Step 2: Fetch all feeds in parallel
+    Raises:
+        FileNotFoundError: If feeds_path doesn't exist.
+        ValueError: If feeds.json is malformed or empty.
+    """
+    # Step 1: Load feeds config from JSON
+    feeds = _load_feeds(feeds_path)
+
+    # Step 2: Load watchlist — get both the ticker list and the name map in one pass
+    entries = _parse_watchlist_file(watchlist_path)
+    symbols = [ticker for ticker, _ in entries]
+    symbol_name_map = {ticker: alt_names for ticker, alt_names in entries}
+
+    # Step 3: Fetch all feeds in parallel
     # ThreadPoolExecutor runs each _fetch_single_feed call in its own thread.
     # max_workers = number of feeds means they all start at the same time.
     all_articles: list[dict] = []
     raw_feed_results: list[dict] = []
 
-    with ThreadPoolExecutor(max_workers=len(FEEDS)) as executor:
-        futures = {executor.submit(_fetch_single_feed, feed): feed for feed in FEEDS}
+    with ThreadPoolExecutor(max_workers=len(feeds)) as executor:
+        futures = {executor.submit(_fetch_single_feed, feed): feed for feed in feeds}
         for future in as_completed(futures):
             result = future.result()
             # Count how many articles from this feed pass the 24h filter
@@ -382,14 +444,14 @@ def fetch_headlines(watchlist_path: Path) -> tuple[list[dict], list[str], list[d
     # Sort feed_results alphabetically so the health summary is consistent
     feed_results = sorted(raw_feed_results, key=lambda r: r["source"])
 
-    # Step 3: Keep only the last 24 hours
+    # Step 4: Keep only the last 24 hours
     recent = [a for a in all_articles if _is_within_24h(a)]
 
-    # Step 4: Deduplicate
+    # Step 5: Deduplicate
     deduped = _deduplicate(recent)
 
-    # Step 5: Tag watchlist mentions
-    tagged = _tag_watchlist(deduped, symbols)
+    # Step 6: Tag watchlist mentions
+    tagged = _tag_watchlist(deduped, symbols, symbol_name_map)
 
     # Sort newest first so the AI sees the most recent news at the top
     tagged.sort(key=lambda a: a["published"], reverse=True)

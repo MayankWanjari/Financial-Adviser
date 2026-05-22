@@ -1,21 +1,28 @@
 """
-ai_analyzer.py — Send headlines to Google Gemini and get back a structured briefing.
+news_analyzer.py — Send headlines to Google Gemini and get back a structured briefing.
 
-This module owns ALL AI-related logic for Stage 1. The things you're most likely
-to want to edit here are:
+This module owns ALL AI-related logic for the news pipeline. The things you're most
+likely to want to edit here are:
   - MODEL_NAME         if you need to swap to a different free-tier model
   - SYSTEM_INSTRUCTION if you want to change the briefing structure or tone
   - ELI12_ADDON        if you want to tweak the "explain like I'm 12" override
+
+Refactored from stage1_news/ai_analyzer.py. Key changes vs the legacy version:
+  - No sys.exit(), no print() — raises exceptions instead
+  - analyze_headlines() returns str (never None); raises RuntimeError on quota
+  - Error messages are preserved as exception messages for the agent to surface
 
 Nothing in this file fetches RSS or writes files — it just takes headlines in
 and returns a markdown string out.
 """
 
 import os
-import sys
+from datetime import date
 
 import google.generativeai as genai  # pip install google-generativeai
 from dotenv import load_dotenv       # pip install python-dotenv
+
+from data.cache import cache_get, cache_set, NEWS_TTL
 
 # ─── Model configuration ──────────────────────────────────────────────────────
 #
@@ -103,7 +110,7 @@ Numerical accuracy (follow these carefully):
 
 # ─── ELI12 addon ──────────────────────────────────────────────────────────────
 #
-# This text is appended to SYSTEM_INSTRUCTION when --eli12 is passed.
+# This text is appended to SYSTEM_INSTRUCTION when eli12_mode=True is passed.
 # It overrides the tone to be suitable for a complete beginner.
 #
 ELI12_ADDON = """
@@ -184,37 +191,49 @@ def analyze_headlines(
     symbols: list[str],
     symbol_name_map: dict[str, list[str]],
     eli12_mode: bool = False,
-) -> str | None:
+) -> str:
     """
     Send the collected headlines to Gemini and return the AI briefing as a string.
 
     Args:
-        articles:        Deduplicated, tagged article list from rss_fetcher.fetch_headlines()
+        articles:        Deduplicated, tagged article list from news_fetcher.fetch_headlines()
         symbols:         Watchlist symbols (e.g., ["RELIANCE", "TCS"])
-        symbol_name_map: Dict of symbol → alternate name list (from rss_fetcher.SYMBOL_NAME_MAP)
+        symbol_name_map: Dict of symbol → alternate name list, from
+                         news_fetcher.build_symbol_name_map() or fetch_headlines()
         eli12_mode:      If True, appends the ELI12 tone override to the system instruction
 
     Returns:
-        The AI-generated briefing as a markdown-formatted string, or None if the
-        Gemini quota was exceeded (the quota error message is already printed).
+        The AI-generated briefing as a markdown-formatted string.
 
     Raises:
-        SystemExit(1): If the API key is missing or a non-quota API error occurs.
-                       Exits with a friendly error message instead of a stack trace.
+        EnvironmentError: If GEMINI_API_KEY is missing from the .env file.
+        RuntimeError:     If the Gemini daily/minute quota is exceeded (HTTP 429).
+        ValueError:       If Gemini's safety filter blocked the response, or if the
+                          API returned an empty/blank result.
+        ConnectionError:  If the Gemini API call failed for any other reason
+                          (network error, invalid key, bad model name, etc.).
     """
+    # ── Cache check — one briefing per day per mode ───────────────────────────
+    # Key includes today's date so it auto-expires at midnight without needing
+    # a short TTL. eli12 mode gets its own key since the output is different.
+    mode_tag = "eli12" if eli12_mode else "normal"
+    cache_key = f"news_briefing_{date.today().isoformat()}_{mode_tag}"
+    cached = cache_get(cache_key, NEWS_TTL)
+    if cached is not None:
+        return cached
+
     # ── Step 1: Load the API key from .env ────────────────────────────────────
     load_dotenv()  # Reads .env file in the current working directory
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
-        # Give a clear, actionable error message — not a cryptic KeyError
-        print("\n❌  GEMINI_API_KEY not found.")
-        print("    To fix this:")
-        print("    1. Copy .env.example to .env  (in the project root folder)")
-        print("    2. Get a free key at https://aistudio.google.com/app/apikey")
-        print("    3. Open .env and change: GEMINI_API_KEY=your_key_here")
-        print("       to use your actual key.\n")
-        sys.exit(1)
+        raise EnvironmentError(
+            "GEMINI_API_KEY not found in environment.\n"
+            "To fix this:\n"
+            "  1. Copy .env.example to .env in the project root folder.\n"
+            "  2. Get a free key at https://aistudio.google.com/app/apikey\n"
+            "  3. Open .env and set GEMINI_API_KEY=your_actual_key_here"
+        )
 
     # ── Step 2: Configure the Gemini client ───────────────────────────────────
     genai.configure(api_key=api_key)
@@ -239,18 +258,18 @@ def analyze_headlines(
         briefing_text = response.text
 
         if not briefing_text or not briefing_text.strip():
-            print("\n❌  Gemini returned an empty response.")
-            print("    This sometimes happens when the safety filter blocks content.")
-            print("    Try running again — it's usually transient.\n")
-            sys.exit(1)
+            raise ValueError(
+                "Gemini returned an empty response. "
+                "This sometimes happens when the safety filter blocks content. "
+                "Try calling again — it's usually transient."
+            )
 
+        cache_set(cache_key, briefing_text)
         return briefing_text
 
-    except ValueError as exc:
-        # Safety filter blocked the response
-        print(f"\n❌  Gemini's safety filter blocked the response: {exc}")
-        print("    This is unusual for financial news. Try running again.\n")
-        sys.exit(1)
+    except ValueError:
+        # Re-raise ValueError as-is (empty response or safety filter block)
+        raise
 
     except Exception as exc:
         # Check specifically for quota / rate-limit errors (HTTP 429)
@@ -267,29 +286,23 @@ def analyze_headlines(
             now_utc = datetime.now(_tz.utc)
             # Free-tier daily quotas typically reset around midnight Pacific Time (~08:00 UTC)
             hours_left = (8 - now_utc.hour) % 24 or 24
-
-            print(f"\n❌  Gemini quota exceeded.")
-            print("    Possible causes:")
-            print(f"    - You hit today's free-tier daily limit (resets in ~{hours_left} hours)")
-            print("    - Your project doesn't have Generative Language API enabled")
-            print(f"    - The model '{MODEL_NAME}' isn't available on free tier in your region")
-            print()
-            print("    Try:")
-            print("    1. Wait 1 minute and run again (per-minute rate limit)")
-            print("    2. Verify your API key at https://aistudio.google.com/app/apikey")
-            print(f"    3. Alternative models: change MODEL_NAME in ai_analyzer.py to")
-            print("       'gemini-1.5-flash' or 'gemini-2.5-flash'")
-            print()
-            # Return None so main.py can save raw headlines before exiting
-            return None
+            raise RuntimeError(
+                f"Gemini quota exceeded (HTTP 429).\n"
+                f"Possible causes:\n"
+                f"  - You hit today's free-tier daily limit (resets in ~{hours_left} hours)\n"
+                f"  - Your project doesn't have Generative Language API enabled\n"
+                f"  - The model '{MODEL_NAME}' isn't available on free tier in your region\n"
+                f"Try: wait 1 minute and retry (per-minute rate limit), or check "
+                f"https://aistudio.google.com/app/apikey"
+            ) from exc
 
         # All other errors: network issues, invalid key, bad model name, etc.
-        print(f"\n❌  Gemini API call failed: {exc}")
-        print(f"    Model used: {MODEL_NAME}")
-        print("    Things to check:")
-        print("    - Is your internet connection working?")
-        print("    - Is your API key correct in the .env file?")
-        print(f"    - If '{MODEL_NAME}' is unavailable, change MODEL_NAME at the top")
-        print("      of ai_analyzer.py to one of the alternatives listed there.")
-        print("    - Free tier has daily limits — try again tomorrow if you hit them.\n")
-        sys.exit(1)
+        raise ConnectionError(
+            f"Gemini API call failed: {exc}\n"
+            f"Model used: {MODEL_NAME}\n"
+            f"Things to check:\n"
+            f"  - Is your internet connection working?\n"
+            f"  - Is your API key correct in the .env file?\n"
+            f"  - If '{MODEL_NAME}' is unavailable, change MODEL_NAME in news_analyzer.py\n"
+            f"    to 'gemini-1.5-flash' or 'gemini-2.5-flash-lite'."
+        ) from exc

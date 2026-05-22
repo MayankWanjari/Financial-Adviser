@@ -23,6 +23,16 @@ ENV/
 stage1_news/briefings/
 stage1_news/raw_headlines/
 
+# ─── Cache (auto-generated, no need to track) ─────────────────────────────────
+cache/*.json
+cache/sessions/
+
+# ─── Build prompts (development only) ─────────────────────────────────────────
+prompts/
+
+# ─── Personal financial data ──────────────────────────────────────────────────
+config/portfolio.json
+
 # ─── IDE / editor files ───────────────────────────────────────────────────────
 .vscode/
 .idea/
